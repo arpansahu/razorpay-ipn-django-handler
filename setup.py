@@ -21,7 +21,11 @@ setup(
         "License :: OSI Approved :: MIT License",  # Update based on your license
         "Programming Language :: Python :: 3",
         "Framework :: Django",
-        "Framework :: Django :: 3.2",  # Specify supported Django versions
+        "Framework :: Django :: 3.2",
+        "Framework :: Django :: 4.0",
+        "Framework :: Django :: 4.1",
+        "Framework :: Django :: 4.2",
+        "Framework :: Django :: 5.1.7",
     ],
     python_requires=">=3.7",
 )

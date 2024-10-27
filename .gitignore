@@ -1,0 +1,48 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Pytest cache
+.pytest_cache/
+
+# Caches
+*.log
+*.sqlite3
+db.sqlite3
+
+# VS Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# System files
+.DS_Store
+*.swp
+
+# Git related
+.git/
+# .github/
+
+# Secret files
+*.env
+*.key
+
+# Rollbar
+.rollbar
+
+# Sentry
+.sentry
+
+# Cashfree SDK settings
+cashfree_pg_sdk/
