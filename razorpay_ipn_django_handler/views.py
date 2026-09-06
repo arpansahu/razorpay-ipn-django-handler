@@ -2,7 +2,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import json
 import logging
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from .models import RazorpayIPN
 from .utilities import ( 
@@ -20,13 +20,39 @@ from .signals import (
 
 logger = logging.getLogger(__name__)
 
+
+def _process_payload(ipn_event, payload_data):
+    if "payment" in payload_data:
+        ipn_event.payment = process_payment_data(payload_data["payment"]["entity"])
+
+    if "refund" in payload_data:
+        ipn_event.refund = process_refund_data(payload_data["refund"]["entity"])
+
+    if "invoice" in payload_data:
+        ipn_event.invoice = process_invoice_data(payload_data["invoice"]["entity"])
+
+    if "subscription" in payload_data:
+        ipn_event.subscription = process_subscription_data(payload_data["subscription"]["entity"])
+
+    if "order" in payload_data:
+        ipn_event.order = process_order_data(payload_data["order"]["entity"])
+
+
 @csrf_exempt
-@transaction.atomic
 def razorpay_ipn_receiver_view(request):
     if request.method == "POST":
+        event_id = None
+        event_type = None
         try:
-            payload = json.loads(request.body)
-            body = request.body.decode('utf-8')
+            try:
+                payload = json.loads(request.body)
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                return JsonResponse({"status": "Invalid JSON"}, status=400)
+
+            if not isinstance(payload, dict):
+                return JsonResponse({"status": "Invalid payload"}, status=400)
+
+            body = request.body
             signature = request.headers.get("X-Razorpay-Signature")
 
             # Extract core event details from headers and payload
@@ -35,10 +61,11 @@ def razorpay_ipn_receiver_view(request):
             account_id = payload.get("account_id")
             payload_data = payload.get("payload", {})
 
-            # Check if this IPN event already exists
-            if RazorpayIPN.objects.filter(event_id=event_id).exists():
-                logger.info(f"Duplicate event received: {event_id}")
-                return JsonResponse({"status": "Duplicate event"}, status=200)
+            if not event_id or not event_type or not account_id or not signature:
+                return JsonResponse({"status": "Missing webhook metadata"}, status=400)
+
+            if not isinstance(payload_data, dict):
+                return JsonResponse({"status": "Invalid payload"}, status=400)
 
             # Initialize the IPN event instance
             ipn_event = RazorpayIPN(
@@ -53,10 +80,6 @@ def razorpay_ipn_receiver_view(request):
             # Verify the signature
             if not ipn_event.verify_signature(body, signature):
                 logger.warning(f"Signature verification failed for event {event_id}")
-                # Save the incomplete IPN record with signature_verified=False
-                ipn_event.signature_verified = False
-                ipn_event.save()
-                # Send invalid signal
                 invalid_razorpay_ipn_received.send(
                     sender=RazorpayIPN,
                     instance=ipn_event
@@ -66,49 +89,30 @@ def razorpay_ipn_receiver_view(request):
             # If signature is verified, proceed with event processing
             ipn_event.signature_verified = True
 
-            # Process Payment
-            if "payment" in payload_data:
-                payment_data = payload_data["payment"]["entity"]                    
-                payment_instance = process_payment_data(payment_data)
-                ipn_event.payment = payment_instance
+            try:
+                with transaction.atomic():
+                    if RazorpayIPN.objects.filter(event_id=event_id).exists():
+                        logger.info("Duplicate event received: %s", event_id)
+                        return JsonResponse({"status": "Duplicate event"}, status=200)
 
+                    _process_payload(ipn_event, payload_data)
+                    ipn_event.processed = True
+                    ipn_event.save()
+                    valid_razorpay_ipn_received.send(
+                        sender=RazorpayIPN,
+                        instance=ipn_event,
+                    )
+            except IntegrityError:
+                if RazorpayIPN.objects.filter(event_id=event_id).exists():
+                    logger.info("Concurrent duplicate event received: %s", event_id)
+                    return JsonResponse({"status": "Duplicate event"}, status=200)
+                raise
 
-            # Process Refund
-            if "refund" in payload_data:
-                refund_data = payload_data["refund"]["entity"]                    
-                refund_instance = process_refund_data(refund_data)
-                ipn_event.refund = refund_instance  
-
-
-            # Process Invoice
-            if "invoice" in payload_data:
-                invoice_data = payload_data["invoice"]["entity"]                
-                invoice_instance = process_invoice_data(invoice_data)
-                ipn_event.invoice = invoice_instance
-
-            # Process Subscription
-            if "subscription" in payload_data:
-                subscription_data = payload_data["subscription"]["entity"]                
-                subscription_instance = process_subscription_data(subscription_data)
-                ipn_event.subscription = subscription_instance
-
-            # Process Order
-            if "order" in payload_data:
-                order_data = payload_data["order"]["entity"]
-                order_instance = process_order_data(order_data)
-                ipn_event.order = order_instance
-
-            # Save the IPN event after processing
-            ipn_event.save()
-
-            # Send valid signal after successful processing
-            valid_razorpay_ipn_received.send(sender=RazorpayIPN, instance=ipn_event)
             logger.info(f"Processed event {event_id} of type {event_type}")
             return JsonResponse({"status": "Success"}, status=200)
 
         except Exception as e:
-            logger.error(f"Error processing webhook: {e}")
-            logger.info(f"Payload which caused error is: {payload}")
+            logger.exception("Error processing webhook event %s", event_id)
             # Send minimal invalid signal information if `ipn_event` isn't created
             invalid_razorpay_ipn_received.send(
                 sender=RazorpayIPN,
@@ -118,6 +122,6 @@ def razorpay_ipn_receiver_view(request):
                     "error": str(e)
                 }
             )
-            return JsonResponse({"status": "Error", "error": str(e)}, status=500)
+            return JsonResponse({"status": "Error"}, status=500)
 
     return JsonResponse({"status": "Method not allowed"}, status=405)

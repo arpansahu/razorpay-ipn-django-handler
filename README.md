@@ -48,26 +48,27 @@ For example, if your server is `https://yourdomain.com`, Razorpay notifications 
 
 > **Note**: Customize the `"payment/razorpay/"` URL to suit your structure if needed.
 
-### Step 3: Set Environment Variables
+### Step 3: Configure the Webhook Secret
 
-Add your Razorpay credentials in `settings.py` using environment variables:
+Load the webhook secret from your environment in `settings.py`:
 
 ```python
-RAZORPAY_WEBHOOK_SECRET = "your_webhook_secret_here"
-RAZORPAY_API_KEY = "your_api_key_here"
-RAZORPAY_API_SECRET = "your_api_secret_here"
+import os
+
+RAZORPAY_WEBHOOK_SECRET = os.environ["RAZORPAY_WEBHOOK_SECRET"]
 ```
 
-Replace the placeholders with your actual credentials from the Razorpay Dashboard.
+Use the exact secret configured for this webhook in the Razorpay Dashboard. API keys are not required by this package.
 
 ### Step 4: Migrate Database
 
 Run migrations to create the necessary database tables:
 
 ```bash
-python manage.py makemigrations
 python manage.py migrate
 ```
+
+Do not run `makemigrations` for the package. Versioned migrations are included in each release.
 
 ## Signal Setup
 
@@ -85,7 +86,7 @@ from razorpay_ipn_django_handler.models import RazorpayIPN
 # Handle valid IPN events
 @receiver(valid_razorpay_ipn_received)
 def handle_valid_ipn(sender, instance, **kwargs):
-    print("Received valid IPN event:", instance.event)
+    print("Received valid IPN event:", instance.event_type)
     # Process the IPN instance as needed
 
 # Handle invalid IPN events
@@ -95,7 +96,9 @@ def handle_invalid_ipn(sender, **kwargs):
     # Log or handle invalid IPN events
 ```
 
-Here, `instance` provides a `RazorpayIPN` object containing event data like `event_type`, `payment_id`, and other Razorpay IPN-related information.
+Here, `instance` provides a `RazorpayIPN` object containing `event_type`, the raw `payload`, and links to any related payment, refund, invoice, subscription, or order.
+
+Webhook event IDs are processed idempotently. A valid repeated delivery receives a successful duplicate response without creating another event. Invalid signatures are never persisted and cannot reserve an event ID.
 
 ## Models Overview
 
@@ -128,7 +131,12 @@ Stores order-specific details such as amount, status, receipt number, and custom
 To verify a Razorpay webhook signature, use the `verify_signature` method on a `RazorpayIPN` instance:
 
 ```python
-ipn_instance = RazorpayIPN.objects.create(payload=payload_data)
+ipn_instance = RazorpayIPN(
+    event_id=event_id,
+    event_type=payload_data["event"],
+    account_id=payload_data["account_id"],
+    payload=payload_data,
+)
 signature_valid = ipn_instance.verify_signature(body=request_body, signature=header_signature)
 if signature_valid:
     # Process the event
@@ -151,7 +159,13 @@ def process_payment_event(sender, instance, **kwargs):
 
 ## Contributing
 
-We welcome contributions to enhance the functionality of this library. Feel free to open issues, suggest features, or submit pull requests on [GitHub](https://github.com/your-repo).
+We welcome contributions to enhance the functionality of this library. Feel free to open issues, suggest features, or submit pull requests on [GitHub](https://github.com/arpansahu/razorpay-ipn-django-handler).
+
+Run the test suite with:
+
+```bash
+DJANGO_SETTINGS_MODULE=test_settings python -m django test razorpay_ipn_django_handler
+```
 
 ## License
 
@@ -161,6 +175,6 @@ This project is licensed under the MIT License. See the LICENSE file for more de
 
 I am [Arpan Sahu], a developer specializing in web development, payment integrations, and more. Feel free to check out my portfolio to learn more about my work:
 
-[Visit My Portfolio](https://arpansahu.me)
+[Visit My Portfolio](https://arpansahu.space)
 
 If you have any questions or are interested in collaborating, please reach out via my portfolio contact form or directly through [LinkedIn](https://linkedin.com/in/arpansahu).

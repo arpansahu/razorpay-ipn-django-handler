@@ -1,9 +1,5 @@
 import uuid
 from django.db import models
-from django.utils import timezone
-from .signals import valid_razorpay_ipn_received, invalid_razorpay_ipn_received
-import logging
-import json
 import hmac
 import hashlib
 from django.conf import settings
@@ -491,7 +487,7 @@ class RazorpayWebhook(models.Model):
     # Unique identifier for the refund, using UUID as primary key
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False, help_text="Unique identifier for the Payment")
 
-    event_id = models.CharField(max_length=255, help_text="Unique identifier for the Razorpay event")
+    event_id = models.CharField(max_length=255, unique=True, help_text="Unique identifier for the Razorpay event")
     event_type = models.CharField(max_length=100, choices=EVENT_TYPE_CHOICES, help_text="Type of event received from Razorpay")
     account_id = models.CharField(max_length=255, help_text="Razorpay Account ID related to the event")
     created_at = models.DateTimeField(auto_now_add=True, help_text="Timestamp when the webhook was created")  # New field
@@ -523,14 +519,16 @@ class RazorpayIPN(RazorpayWebhook):
         """
         Verifies the signature using Razorpay's secret key.
         """
-        try:
-            generated_signature = hmac.new(
-                settings.RAZORPAY_WEBHOOK_SECRET.encode(),
-                body.encode(),
-                hashlib.sha256
-            ).hexdigest()
-            self.signature_verified = hmac.compare_digest(generated_signature, signature)
-            return self.signature_verified
-        except Exception as e:
-            logger.error(f"Error verifying Razorpay signature: {e}")
+        if not signature:
             return False
+
+        secret = settings.RAZORPAY_WEBHOOK_SECRET
+        secret_bytes = secret.encode() if isinstance(secret, str) else secret
+        body_bytes = body.encode() if isinstance(body, str) else body
+        generated_signature = hmac.new(
+            secret_bytes,
+            body_bytes,
+            hashlib.sha256,
+        ).hexdigest()
+        self.signature_verified = hmac.compare_digest(generated_signature, signature)
+        return self.signature_verified

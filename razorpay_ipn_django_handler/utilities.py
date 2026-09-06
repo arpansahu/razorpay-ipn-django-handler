@@ -3,18 +3,14 @@ from razorpay_ipn_django_handler.models import (
     ShippingAddress, CustomerDetails, Item, LineItem, Invoice, Order
 )
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
-def make_aware_if_naive(dt):
-    """
-    Convert a naive datetime to an aware datetime if timezone support is enabled.
-    """
-    from django.utils import timezone
-    if dt and timezone.is_naive(dt):
-        return timezone.make_aware(dt)
-    return dt
+def datetime_from_timestamp(timestamp):
+    if timestamp is None:
+        return None
+    return datetime.fromtimestamp(timestamp, tz=timezone.utc)
 
 def process_payment_data(payment_data):
     """
@@ -76,7 +72,7 @@ def process_payment_data(payment_data):
         error_source=payment_data.get("error_source"),
         error_step=payment_data.get("error_step"),
         error_reason=payment_data.get("error_reason"),
-        created_at=make_aware_if_naive(datetime.fromtimestamp(payment_data.get("created_at")) if payment_data.get("created_at") else None),
+        created_at=datetime_from_timestamp(payment_data.get("created_at")),
     )
 
     return payment
@@ -88,7 +84,7 @@ def process_refund_data(refund_data):
         currency=refund_data.get("currency"),
         payment_id=refund_data.get("payment_id"),
         speed=refund_data.get("speed", "normal"),
-        created_at=make_aware_if_naive(datetime.fromtimestamp(refund_data.get("created_at")) if refund_data.get("created_at") else None),
+        created_at=datetime_from_timestamp(refund_data.get("created_at")),
         batch_id=refund_data.get("batch_id"),
         receipt=refund_data.get("receipt"),
         status=refund_data.get("status", "pending"),
@@ -150,8 +146,8 @@ def process_invoice_data(invoice_data):
                 description=line_item_data.get("description"),
                 amount=line_item_data.get("amount"),
                 unit_amount=line_item_data.get("unit_amount"),
-                currency=line_item_data.get("currency"),
-                type=line_item_data.get("type"),
+                currency=line_item_data.get("currency", "INR"),
+                type=line_item_data.get("type", "invoice"),
                 unit=line_item_data.get("unit"),
                 tax_inclusive=line_item_data.get("tax_inclusive", False),
                 hsn_code=line_item_data.get("hsn_code"),
@@ -179,14 +175,14 @@ def process_invoice_data(invoice_data):
         subscription_id=invoice_data.get("subscription_id"),
         payment_id=invoice_data.get("payment_id"),
         status=invoice_data.get("status"),
-        expire_by=make_aware_if_naive(datetime.fromtimestamp(invoice_data.get("expire_by")) if invoice_data.get("expire_by") else None),
-        issued_at=make_aware_if_naive(datetime.fromtimestamp(invoice_data.get("issued_at")) if invoice_data.get("issued_at") else None),
-        paid_at=make_aware_if_naive(datetime.fromtimestamp(invoice_data.get("paid_at")) if invoice_data.get("paid_at") else None),
-        cancelled_at=make_aware_if_naive(datetime.fromtimestamp(invoice_data.get("cancelled_at")) if invoice_data.get("cancelled_at") else None),
-        expired_at=make_aware_if_naive(datetime.fromtimestamp(invoice_data.get("expired_at")) if invoice_data.get("expired_at") else None),
+        expire_by=datetime_from_timestamp(invoice_data.get("expire_by")),
+        issued_at=datetime_from_timestamp(invoice_data.get("issued_at")),
+        paid_at=datetime_from_timestamp(invoice_data.get("paid_at")),
+        cancelled_at=datetime_from_timestamp(invoice_data.get("cancelled_at")),
+        expired_at=datetime_from_timestamp(invoice_data.get("expired_at")),
         sms_status=invoice_data.get("sms_status"),
         email_status=invoice_data.get("email_status"),
-        date=make_aware_if_naive(datetime.fromtimestamp(invoice_data.get("date")) if invoice_data.get("date") else None),
+        date=datetime_from_timestamp(invoice_data.get("date")),
         terms=invoice_data.get("terms"),
         partial_payment=invoice_data.get("partial_payment", False),
         gross_amount=invoice_data.get("gross_amount"),
@@ -209,22 +205,22 @@ def process_subscription_data(subscription_data):
         plan_id=subscription_data.get("plan_id"),
         customer_id=subscription_data.get("customer_id"),
         status=subscription_data.get("status"),
-        current_start=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("current_start")) if subscription_data.get("current_start") else None),
-        current_end=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("current_end")) if subscription_data.get("current_end") else None),
-        ended_at=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("ended_at")) if subscription_data.get("ended_at") else None),
+        current_start=datetime_from_timestamp(subscription_data.get("current_start")),
+        current_end=datetime_from_timestamp(subscription_data.get("current_end")),
+        ended_at=datetime_from_timestamp(subscription_data.get("ended_at")),
         quantity=subscription_data.get("quantity", 1),
         notes=subscription_data.get("notes", {}),
-        charge_at=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("charge_at")) if subscription_data.get("charge_at") else None),
-        start_at=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("start_at")) if subscription_data.get("start_at") else None),
-        end_at=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("end_at")) if subscription_data.get("end_at") else None),
+        charge_at=datetime_from_timestamp(subscription_data.get("charge_at")),
+        start_at=datetime_from_timestamp(subscription_data.get("start_at")),
+        end_at=datetime_from_timestamp(subscription_data.get("end_at")),
         auth_attempts=subscription_data.get("auth_attempts", 0),
         total_count=subscription_data.get("total_count", 0),
         paid_count=subscription_data.get("paid_count", 0),
         customer_notify=subscription_data.get("customer_notify", True),
-        created_at=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("created_at")) if subscription_data.get("created_at") else None),
-        expire_by=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("expire_by")) if subscription_data.get("expire_by") else None),
+        created_at=datetime_from_timestamp(subscription_data.get("created_at")),
+        expire_by=datetime_from_timestamp(subscription_data.get("expire_by")),
         has_scheduled_changes=subscription_data.get("has_scheduled_changes", False),
-        change_scheduled_at=make_aware_if_naive(datetime.fromtimestamp(subscription_data.get("change_scheduled_at")) if subscription_data.get("change_scheduled_at") else None),
+        change_scheduled_at=datetime_from_timestamp(subscription_data.get("change_scheduled_at")),
         source=subscription_data.get("source"),
         payment_method=subscription_data.get("payment_method"),
         offer_id=subscription_data.get("offer_id"),
@@ -237,6 +233,7 @@ def process_order_data(order_data):
     order = Order.objects.create(
         id=order_data.get("id"),
         amount=order_data.get("amount", 0),
+        partial_payment=order_data.get("partial_payment", False),
         amount_paid=order_data.get("amount_paid", 0),
         amount_due=order_data.get("amount_due", 0),
         currency=order_data.get("currency", "INR"),
@@ -244,7 +241,7 @@ def process_order_data(order_data):
         offer_id=order_data.get("offer_id"),
         status=order_data.get("status", "created"),
         attempts=order_data.get("attempts", 0),
-        created_at=make_aware_if_naive(datetime.fromtimestamp(order_data.get("created_at")) if order_data.get("created_at") else None),
+        created_at=datetime_from_timestamp(order_data.get("created_at")),
         notes=order_data.get("notes", {})
     )
 
